@@ -14,7 +14,7 @@ Open `index.html` in a modern browser. No build step or dependency installation 
 2. On **Repository**, paste code, choose a filename, and select **Analyze codebase**.
 3. Review the dashboard, rule-level findings, proposed change, unified diff, and verification ledger.
 
-Current enforcement is intentionally conservative: `snake_case` function names and `console.log` removal can be proposed automatically; length and architecture rules are surfaced for AI-assisted or human review. Tests, linters, and type checks are clearly marked as not run because browser-based analysis must not execute untrusted repository code.
+Current enforcement is intentionally conservative: snake_case function names and console.log removal can be proposed automatically; length and architecture rules are surfaced for AI-assisted or human review. Rules without a deterministic matcher are explicitly marked **NOT EVALUATED**, excluded from the compliance percentage, and placed in the review queue. Tests, linters, and type checks are clearly marked as not run because browser-based analysis must not execute untrusted repository code.
 
 ## Architecture
 

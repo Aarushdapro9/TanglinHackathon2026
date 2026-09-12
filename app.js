@@ -1,5 +1,5 @@
 /* CodeRat: deterministic, local-only compliance MVP. Uploaded code is never executed. */
-const state = { rules: [], violations: [], changes: [], selectedChange: null, ranAt: null, postChangeRescan: false, appliedChanges: [] };
+const state = { rules: [], violations: [], coverage: [], changes: [], selectedChange: null, ranAt: null, postChangeRescan: false, appliedChanges: [] };
 const byId = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]));
 const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -22,14 +22,17 @@ function ruleFromLine(line, index) {
 
 function extractRules(guide) {
   const unique = new Map();
-  guide.split(/\r?\n/).map(ruleFromLine).filter(Boolean).forEach((rule) => { if (!unique.has(rule.matcher)) unique.set(rule.matcher, rule); });
+  guide.split(/\r?\n/).map(ruleFromLine).filter(Boolean).forEach((rule) => {
+    const key = ["manual", "human-review", "error-handling"].includes(rule.matcher) ? rule.id : rule.matcher;
+    if (!unique.has(key)) unique.set(key, rule);
+  });
   return [...unique.values()];
 }
 
 function findFunctionBlocks(source) {
   const lines = source.split(/\r?\n/), blocks = [];
   lines.forEach((line, index) => {
-    const match = line.match(/(?:function\s+|async\s+)?([a-zA-Z_$][\w$]*)\s*\([^)]*\)\s*(?::[^={]+)?\s*\{/);
+    const match = line.match(/(?:function\s+|async\s+)?([a-zA-Z_$][\w$]*)\s*\([^)]*\)\s*(?::[^={]+)?\s*\{/) || line.match(/(?:const|let|var)\s+([a-zA-Z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z_$][\w$]*)\s*=>\s*\{/);
     if (!match || /\b(if|for|while|switch|catch)\s*\(/.test(line)) return;
     let depth = 0, end = index;
     for (let cursor = index; cursor < lines.length; cursor += 1) {
@@ -39,6 +42,11 @@ function findFunctionBlocks(source) {
     blocks.push({ name: match[1], start: index + 1, end: end + 1, lines: end - index + 1 });
   });
   return blocks;
+}
+
+function getRuleCoverage(rules) {
+  const supportedMatchers = new Set(["snake-case", "console-log", "function-length", "service-db"]);
+  return rules.map((rule) => ({ ruleId: rule.id, status: supportedMatchers.has(rule.matcher) ? "EVALUATED" : "NOT_EVALUATED", reason: supportedMatchers.has(rule.matcher) ? "Deterministic local analyzer applied." : "This rule needs an AI or human reviewer; CodeRat has not evaluated it." }));
 }
 
 function analyze(rules, source, file) {
@@ -81,16 +89,21 @@ function renderRules() {
   });
 }
 
-function complianceScore(violations) { return Math.max(38, Math.min(100, 100 - violations.length * 7)); }
+function complianceScore(violations, evaluatedRuleCount) {
+  if (!evaluatedRuleCount) return null;
+  return Math.max(38, Math.min(100, 100 - violations.length * 7));
+}
 function renderDashboard() {
-  const total = state.violations.length, auto = state.violations.filter((v) => v.classification.includes("Safe")).length, assisted = state.violations.filter((v) => v.classification.includes("AI")).length, review = total - auto - assisted;
-  const before = complianceScore(state.violations), after = Math.min(100, before + state.changes.length * 7);
-  byId("beforeScore").textContent = state.ranAt ? before + "%" : "—"; byId("afterScore").textContent = state.ranAt ? after + "%" : "—";
-  byId("scoreCaption").textContent = state.ranAt ? total + " linked finding" + (total === 1 ? "" : "s") + " across " + state.rules.length + " standards." : "Add a style guide and code to start a compliance scan.";
+  const total = state.violations.length, auto = state.violations.filter((v) => v.classification.includes("Safe")).length, assisted = state.violations.filter((v) => v.classification.includes("AI")).length, unevaluated = state.coverage.filter((item) => item.status === "NOT_EVALUATED"), review = total - auto - assisted + unevaluated.length;
+  const evaluated = state.coverage.filter((item) => item.status === "EVALUATED"), before = complianceScore(state.violations, evaluated.length), after = before === null ? null : Math.min(100, before + state.changes.length * 7);
+  byId("beforeScore").textContent = state.ranAt && before !== null ? before + "%" : "—"; byId("afterScore").textContent = state.ranAt && after !== null ? after + "%" : "—";
+  byId("scoreCaption").textContent = state.ranAt ? (evaluated.length ? before + "% applies only to " + evaluated.length + " evaluated rule" + (evaluated.length === 1 ? "" : "s") + "; " + unevaluated.length + " require review." : "No rules were deterministically evaluated; all " + unevaluated.length + " rule(s) require review.") : "Add a style guide and code to start a compliance scan.";
   [["violationsTotal", total], ["autoTotal", auto], ["assistedTotal", assisted], ["reviewTotal", review]].forEach((entry) => { byId(entry[0]).textContent = entry[1]; });
   byId("analysisTime").textContent = state.ranAt ? state.ranAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "not yet run";
-  byId("ruleHealth").innerHTML = state.rules.length ? state.rules.map((rule) => { const found = state.violations.filter((v) => v.ruleId === rule.id).length, score = Math.max(0, 100 - found * 14); return '<div class="rule-health-row"><span>' + escapeHtml(rule.category) + '</span><div class="progress"><i style="width:' + score + '%"></i></div><b>' + score + '%</b></div>'; }).join("") : '<p class="empty">No rules extracted yet.</p>';
-  byId("findingRows").innerHTML = total ? state.violations.slice(0, 6).map((v) => '<tr><td>' + escapeHtml(v.ruleName) + '</td><td>' + escapeHtml(v.file) + ':' + v.line + '</td><td><span class="tag ' + (v.classification.includes("Safe") ? "auto" : v.classification.includes("AI") ? "assisted" : "review") + '">' + escapeHtml(v.classification) + '</span></td><td><span class="tag neutral">OPEN</span></td></tr>').join("") : '<tr><td colspan="4" class="empty">Run an analysis to populate the compliance queue.</td></tr>';
+  byId("ruleHealth").innerHTML = state.rules.length ? state.rules.map((rule) => { if (!state.ranAt) return '<div class="rule-health-row"><span>' + escapeHtml(rule.category) + '</span><div class="progress"><i style="width:0%"></i></div><b>PENDING</b></div>'; const coverage = state.coverage.find((item) => item.ruleId === rule.id), found = state.violations.filter((v) => v.ruleId === rule.id).length; if (coverage && coverage.status === "NOT_EVALUATED") return '<div class="rule-health-row"><span>' + escapeHtml(rule.category) + '</span><div class="progress"><i style="width:0%;background:#ea5a68"></i></div><b>REVIEW</b></div>'; const score = Math.max(0, 100 - found * 14); return '<div class="rule-health-row"><span>' + escapeHtml(rule.category) + '</span><div class="progress"><i style="width:' + score + '%"></i></div><b>' + score + '%</b></div>'; }).join("") : '<p class="empty">No rules extracted yet.</p>';
+  const findingRows = state.violations.slice(0, 6).map((v) => '<tr><td>' + escapeHtml(v.ruleName) + '</td><td>' + escapeHtml(v.file) + ':' + v.line + '</td><td><span class="tag ' + (v.classification.includes("Safe") ? "auto" : v.classification.includes("AI") ? "assisted" : "review") + '">' + escapeHtml(v.classification) + '</span></td><td><span class="tag neutral">OPEN</span></td></tr>');
+  unevaluated.forEach((coverage) => { const rule = state.rules.find((item) => item.id === coverage.ruleId); findingRows.push('<tr><td>' + escapeHtml(rule.name) + '</td><td>Rule-level review</td><td><span class="tag review">NOT EVALUATED</span></td><td><span class="tag review">REVIEW</span></td></tr>'); });
+  byId("findingRows").innerHTML = findingRows.length ? findingRows.join("") : '<tr><td colspan="4" class="empty">No violations found in the rules that were evaluated.</td></tr>';
   byId("verificationBadge").textContent = state.ranAt ? "STATIC SCAN" : "NOT RUN";
   const postChangeStatus = state.postChangeRescan ? '<div class="verification-item done"><span class="check">✓</span><div><strong>Post-change re-scan</strong><small>Completed after ' + state.appliedChanges.length + ' local application(s)</small></div></div>' : '<div class="verification-item"><span class="check">—</span><div><strong>Post-change re-scan</strong><small>Not run — proposed diffs have not been applied</small></div></div>';
   byId("verificationList").innerHTML = state.ranAt ? '<div class="verification-item done"><span class="check">✓</span><div><strong>Initial style-rule scan</strong><small>Completed against submitted source text</small></div></div>' + postChangeStatus + '<div class="verification-item"><span class="check">—</span><div><strong>Tests, lint & type check</strong><small>Not run — connect an isolated verifier</small></div></div>' : '<p class="empty">Verification begins after analysis.</p>';
@@ -121,30 +134,30 @@ function runAnalysis() {
   const source = byId("sourceCode").value.trim(), file = byId("filePath").value.trim() || "source.ts";
   if (!state.rules.length) { state.rules = extractRules(byId("guideText").value); renderRules(); }
   if (!source || !state.rules.length) { byId("sourceStatus").textContent = "Add both a guide and source text before analyzing."; activate("repository"); return; }
-  state.violations = analyze(state.rules, source, file); state.changes = planChanges(state.violations, source); state.selectedChange = state.changes[0] ? state.changes[0].id : null; state.postChangeRescan = false; state.appliedChanges = []; state.ranAt = new Date();
+  state.coverage = getRuleCoverage(state.rules); state.violations = analyze(state.rules, source, file); state.changes = planChanges(state.violations, source); state.selectedChange = state.changes[0] ? state.changes[0].id : null; state.postChangeRescan = false; state.appliedChanges = []; state.ranAt = new Date();
   byId("sourceStatus").textContent = file + " analyzed locally — " + state.violations.length + " linked finding(s)";
   renderDashboard(); renderChanges(); activate("dashboard");
 }
 
 function exportReport() {
-  const report = { product: "CodeRat", generated_at: new Date().toISOString(), execution: "No repository code was executed.", rules: state.rules, violations: state.violations.map(({ rule, ...finding }) => finding), proposed_transformations: state.changes, locally_applied_transformations: state.appliedChanges, verification: { initial_static_scan: state.ranAt ? "COMPLETED" : "NOT_RUN", post_change_rescan: state.postChangeRescan ? "COMPLETED" : "NOT_VERIFIED", tests: "NOT_VERIFIED", lint: "NOT_VERIFIED", typecheck: "NOT_VERIFIED" } };
+  const report = { product: "CodeRat", generated_at: new Date().toISOString(), execution: "No repository code was executed.", rules: state.rules, rule_coverage: state.coverage, violations: state.violations.map(({ rule, ...finding }) => finding), proposed_transformations: state.changes, locally_applied_transformations: state.appliedChanges, verification: { initial_static_scan: state.ranAt ? "COMPLETED" : "NOT_RUN", post_change_rescan: state.postChangeRescan ? "COMPLETED" : "NOT_VERIFIED", tests: "NOT_VERIFIED", lint: "NOT_VERIFIED", typecheck: "NOT_VERIFIED" } };
   const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), url = URL.createObjectURL(blob), link = document.createElement("a");
   link.href = url; link.download = "coderat-compliance-report.json"; link.click(); URL.revokeObjectURL(url);
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => activate(button.dataset.view)));
 document.querySelectorAll("[data-view-target]").forEach((button) => button.addEventListener("click", () => activate(button.dataset.viewTarget)));
-byId("extractRules").addEventListener("click", () => { state.rules = extractRules(byId("guideText").value); state.violations = []; state.changes = []; state.postChangeRescan = false; state.appliedChanges = []; state.ranAt = null; renderRules(); renderDashboard(); renderChanges(); });
+byId("extractRules").addEventListener("click", () => { state.rules = extractRules(byId("guideText").value); state.violations = []; state.coverage = []; state.changes = []; state.postChangeRescan = false; state.appliedChanges = []; state.ranAt = null; renderRules(); renderDashboard(); renderChanges(); });
 byId("analyzeButton").addEventListener("click", runAnalysis); byId("analyzeHeader").addEventListener("click", runAnalysis); byId("exportReport").addEventListener("click", exportReport);
 byId("approveButton").addEventListener("click", () => {
   const change = state.changes.find((item) => item.id === state.selectedChange);
   if (!change) { alert("Select a safe proposed change first."); return; }
   const sourceInput = byId("sourceCode"), source = sourceInput.value, updated = source.replace(change.before, change.after);
   if (updated === source) { alert("The staged source no longer matches this proposal. Run analysis again."); return; }
-  sourceInput.value = updated; state.appliedChanges.push(change); state.violations = analyze(state.rules, updated, byId("filePath").value.trim() || "source.ts"); state.changes = planChanges(state.violations, updated); state.selectedChange = state.changes[0] ? state.changes[0].id : null; state.postChangeRescan = true; state.ranAt = new Date();
+  sourceInput.value = updated; state.appliedChanges.push(change); state.coverage = getRuleCoverage(state.rules); state.violations = analyze(state.rules, updated, byId("filePath").value.trim() || "source.ts"); state.changes = planChanges(state.violations, updated); state.selectedChange = state.changes[0] ? state.changes[0].id : null; state.postChangeRescan = true; state.ranAt = new Date();
   byId("sourceStatus").textContent = "Applied locally and re-scanned — no repository file was modified."; renderDashboard(); renderChanges();
 });
 byId("guideFile").addEventListener("change", (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { byId("guideText").value = reader.result; }; reader.readAsText(file); });
 byId("sourceFile").addEventListener("change", (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { byId("sourceCode").value = reader.result; byId("filePath").value = file.name; byId("sourceStatus").textContent = file.name + " loaded locally; ready for analysis."; }; reader.readAsText(file); });
 state.rules = extractRules(byId("guideText").value); renderRules(); renderDashboard(); renderChanges();
-window.CodeRatEngine = { extractRules, analyze, planChanges, findFunctionBlocks };
+window.CodeRatEngine = { extractRules, analyze, planChanges, findFunctionBlocks, getRuleCoverage };

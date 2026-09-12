@@ -8,8 +8,8 @@ const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 const engineOnly = app.slice(0, app.indexOf('document.querySelectorAll("[data-view]")'));
 const sandbox = { window: {}, document: {}, console };
 vm.createContext(sandbox);
-vm.runInContext(engineOnly + "\nwindow.CodeRatEngine = { extractRules, analyze, planChanges };", sandbox);
-const { extractRules, analyze, planChanges } = sandbox.window.CodeRatEngine;
+vm.runInContext(engineOnly + "\nwindow.CodeRatEngine = { extractRules, analyze, planChanges, getRuleCoverage, findFunctionBlocks };", sandbox);
+const { extractRules, analyze, planChanges, getRuleCoverage, findFunctionBlocks } = sandbox.window.CodeRatEngine;
 
 test("extracts structured rules from plain-language style guidance", () => {
   const rules = extractRules("- Use snake_case for function names.\n- Functions should be less than 3 lines.\n- Do not use console.log.");
@@ -27,4 +27,18 @@ test("links violations and safe transformations back to their source rule", () =
   const changes = planChanges(violations, source);
   assert.equal(changes.length, 2);
   assert.match(changes[0].explanation, /Applied because/);
+});
+
+test("does not mark unsupported rules as compliant", () => {
+  const rules = extractRules("- Document all public functions.\n- Use snake_case for function names.");
+  const coverage = getRuleCoverage(rules);
+  assert.equal(coverage.find((item) => item.ruleId === rules[0].id).status, "NOT_EVALUATED");
+  assert.equal(coverage.find((item) => item.ruleId === rules[1].id).status, "EVALUATED");
+});
+
+test("detects camelCase arrow functions as naming violations", () => {
+  const rules = extractRules("- Use snake_case for function names.");
+  const source = "const getUser = async (id) => {\n  return id;\n};";
+  assert.equal(findFunctionBlocks(source)[0].name, "getUser");
+  assert.equal(analyze(rules, source, "src/users.ts").length, 1);
 });
