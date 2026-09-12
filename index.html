@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="description" content="CodeRat makes engineering style guides executable." /><title>CodeRat — Style compliance</title><link rel="stylesheet" href="styles.css" /></head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="#dashboard"><span class="brand-mark">CR</span><span>CodeRat</span></a><p class="workspace-label">WORKSPACE</p><button class="workspace-button"><span class="repo-dot"></span>Acme / web-api <span class="chevron">⌄</span></button>
+        <nav aria-label="Primary navigation"><button class="nav-link active" data-view="dashboard"><span>▦</span> Compliance</button><button class="nav-link" data-view="rules"><span>≡</span> Style guide <b id="ruleCount">0</b></button><button class="nav-link" data-view="repository"><span>⌘</span> Repository</button><button class="nav-link" data-view="changes"><span>⇄</span> Changes <b id="changeCount">0</b></button></nav><div class="sidebar-footer"><span class="status-pulse"></span> Local analysis only</div>
+      </aside>
+      <main>
+        <header class="topbar"><div><span class="eyebrow">ENGINEERING STANDARDS</span><h1 id="pageTitle">Style compliance</h1></div><div class="top-actions"><button class="button quiet" id="exportReport">Export report</button><button class="button primary" id="analyzeHeader">Run analysis <span>→</span></button></div></header>
+        <section class="view active" id="dashboard">
+          <div class="hero-card"><div><p class="eyebrow green">STYLE COMPLIANCE</p><div class="score-row"><strong id="beforeScore">—</strong><span class="arrow">→</span><strong class="after" id="afterScore">—</strong></div><p id="scoreCaption">Add a style guide and code to start a compliance scan.</p></div><div class="hero-actions"><button class="button primary" data-view-target="repository">Analyze codebase <span>→</span></button><p>Last analysis <span id="analysisTime">not yet run</span></p></div></div>
+          <div class="metric-grid"><article class="metric"><span class="metric-icon amber">!</span><div><strong id="violationsTotal">0</strong><p>violations found</p></div></article><article class="metric"><span class="metric-icon green">✓</span><div><strong id="autoTotal">0</strong><p>safe auto-fixes</p></div></article><article class="metric"><span class="metric-icon violet">✦</span><div><strong id="assistedTotal">0</strong><p>AI-assisted fixes</p></div></article><article class="metric"><span class="metric-icon red">!</span><div><strong id="reviewTotal">0</strong><p>require review</p></div></article></div>
+          <div class="content-grid"><section class="panel rule-health"><div class="panel-heading"><div><p class="eyebrow">RULES</p><h2>Compliance by standard</h2></div><button class="text-button" data-view-target="rules">View all →</button></div><div id="ruleHealth" class="rule-health-list"><p class="empty">No rules extracted yet.</p></div></section><section class="panel activity"><div class="panel-heading"><div><p class="eyebrow">LATEST ANALYSIS</p><h2>Verification ledger</h2></div><span class="tag neutral" id="verificationBadge">NOT RUN</span></div><div id="verificationList" class="verification-list"><p class="empty">Verification begins after analysis.</p></div></section></div>
+          <section class="panel findings-panel"><div class="panel-heading"><div><p class="eyebrow">PRIORITY QUEUE</p><h2>Violations that need attention</h2></div><button class="text-button" data-view-target="changes">Review changes →</button></div><div class="table-wrap"><table><thead><tr><th>RULE</th><th>LOCATION</th><th>CLASSIFICATION</th><th>STATUS</th></tr></thead><tbody id="findingRows"><tr><td colspan="4" class="empty">Run an analysis to populate the compliance queue.</td></tr></tbody></table></div></section>
+        </section>
+        <section class="view" id="rules"><div class="section-intro"><div><p class="eyebrow">SOURCE OF TRUTH</p><h2>Make your standards executable</h2><p>CodeRat extracts a readable guide into structured, traceable rules. You retain control of every interpretation.</p></div><label class="button quiet file-label">Import .md / .txt<input id="guideFile" type="file" accept=".md,.markdown,.txt,text/plain" /></label></div><div class="two-column"><section class="panel editor-panel"><label for="guideText">STYLE GUIDE</label><textarea id="guideText" spellcheck="false"># Acme Engineering Standards v2.4
+
+- Functions should be less than 40 lines.
+- Use snake_case for function names.
+- Do not use console.log in production code.
+- Services must not access the database directly.
+- Public API changes require human review.</textarea><div class="editor-footer"><span>Markdown or plain text</span><button class="button primary" id="extractRules">Extract rules <span>→</span></button></div></section><section class="panel extracted-panel"><div class="panel-heading"><div><p class="eyebrow">NORMALIZED RULES</p><h2 id="extractedTitle">0 rule candidates</h2></div><span class="tag green-tag">LOCAL PARSER</span></div><div id="ruleCards" class="rule-cards"></div></section></div></section>
+        <section class="view" id="repository"><div class="section-intro"><div><p class="eyebrow">LOCAL-FIRST ANALYSIS</p><h2>Analyze code without executing it</h2><p>Paste or load a representative source file. CodeRat only reads text in this browser; test execution needs an isolated runner.</p></div><label class="button quiet file-label">Load source file<input id="sourceFile" type="file" accept=".ts,.tsx,.js,.jsx,.py,.java,.go,.rs,.txt,text/plain" /></label></div><section class="panel repo-panel"><div class="file-input-row"><label>FILE PATH <input id="filePath" value="src/users/UserService.ts" /></label><label>LANGUAGE <select id="language"><option value="typescript">TypeScript</option><option value="javascript">JavaScript</option><option value="python">Python</option></select></label></div><label for="sourceCode">SOURCE CODE</label><textarea id="sourceCode" class="code-input" spellcheck="false">export class UserService {
+  async getUser(userId: string) {
+    console.log("loading user", userId);
+    const user = await db.query("select * from users where id = $1", [userId]);
+    return user;
+  }
+
+  async processNewUser(user: User) {
+    const normalized = normalizeUser(user);
+    await validateUser(normalized);
+    await this.audit(normalized);
+    await this.notify(normalized);
+    return normalized;
+  }
+}</textarea><div class="repo-footer"><span id="sourceStatus">1 file staged locally</span><button class="button primary large" id="analyzeButton">Analyze codebase <span>→</span></button></div></section><div class="safety-note"><span>◈</span><p><strong>Security boundary:</strong> CodeRat does not run source code, shell commands, tests, or scripts in the browser. Verification statuses reflect exactly what was performed.</p></div></section>
+        <section class="view" id="changes"><div class="section-intro"><div><p class="eyebrow">AUDITABLE TRANSFORMATIONS</p><h2>Every change has a reason</h2><p>Review a proposed change alongside the responsible rule, before/after code, and real verification state.</p></div><button class="button primary" id="approveButton">Approve selected <span>→</span></button></div><div class="change-layout"><section class="panel change-list"><div class="panel-heading"><h2>Proposed changes</h2><span id="plannedCount" class="tag neutral">0 PLANNED</span></div><div id="changeItems"><p class="empty">Safe transformations appear after analysis.</p></div></section><section class="panel diff-panel"><div id="changeDetail"><div class="empty-detail"><span>⇄</span><h3>Select a proposed change</h3><p>CodeRat will show the rule, a specific explanation, a unified diff, and verification evidence.</p></div></div></section></div></section>
+      </main>
+    </div>
+    <template id="ruleCardTemplate"><article class="rule-card"><div class="rule-card-top"><span class="rule-number"></span><span class="tag"></span></div><h3></h3><p></p><div class="rule-meta"></div></article></template><script src="app.js"></script>
+  </body>
+</html>
